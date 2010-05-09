@@ -25,3 +25,7 @@ group :data_mapper do
   gem "dm-timestamps", :git => "git://github.com/datamapper/dm-more.git"
   gem "dm-rails", :git => "git://github.com/datamapper/dm-rails.git"
 end
+
+group :ripple do
+  gem "ripple", :git => "git://github.com/seancribbs/ripple.git"
+end
