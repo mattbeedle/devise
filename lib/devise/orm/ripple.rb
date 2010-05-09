@@ -22,7 +22,8 @@ module Devise
   end
 end
 
-Ripple::Document::ClassMethods.class_eval do
+#Ripple::Document::ClassMethods.class_eval do
+Ripple::Document.included do
   include Devise::Models
   include Devise::Orm::Ripple::Hook
 end
