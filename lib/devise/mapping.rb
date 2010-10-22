@@ -22,18 +22,8 @@ module Devise
   #   # is the modules included in the class
   #
   class Mapping #:nodoc:
-    attr_reader :singular, :plural, :path, :controllers, :path_names, :path_prefix
+    attr_reader :singular, :plural, :path, :controllers, :path_names, :class_name, :sign_out_via
     alias :name :singular
-
-    # Loop through all mappings looking for a map that matches with the requested
-    # path (ie /users/sign_in). If a path prefix is given, it's taken into account.
-    def self.find_by_path(path)
-      Devise.mappings.each_value do |mapping|
-        route = path.split("/")[mapping.segment_position]
-        return mapping if route && mapping.path == route.to_sym
-      end
-      nil
-    end
 
     # Receives an object and find a scope for it. If a scope cannot be found,
     # raises an error. If a symbol is given, it's considered to be the scope.
@@ -51,28 +41,24 @@ module Devise
     end
 
     def initialize(name, options) #:nodoc:
-      if as = options.delete(:as)
-        ActiveSupport::Deprecation.warn ":as is deprecated, please use :path instead."
-        options[:path] ||= as
-      end
+      @plural   = (options[:as] ? "#{options[:as]}_#{name}" : name).to_sym
+      @singular = (options[:singular] || @plural.to_s.singularize).to_sym
 
-      if scope = options.delete(:scope)
-        ActiveSupport::Deprecation.warn ":scope is deprecated, please use :singular instead."
-        options[:singular] ||= scope
-      end
+      @class_name = (options[:class_name] || name.to_s.classify).to_s
+      @ref = ActiveSupport::Dependencies.ref(@class_name)
 
-      @plural   = name.to_sym
-      @path     = (options.delete(:path) || name).to_sym
-      @klass    = (options.delete(:class_name) || name.to_s.classify).to_s
-      @singular = (options.delete(:singular) || name.to_s.singularize).to_sym
+      @path = (options[:path] || name).to_s
+      @path_prefix = options[:path_prefix]
 
-      @path_prefix = "/#{options.delete(:path_prefix)}/".squeeze("/")
+      mod = options[:module] || "devise"
+      @controllers = Hash.new { |h,k| h[k] = "#{mod}/#{k}" }
+      @controllers.merge!(options[:controllers] || {})
 
-      @controllers = Hash.new { |h,k| h[k] = "devise/#{k}" }
-      @controllers.merge!(options.delete(:controllers) || {})
+      @path_names = Hash.new { |h,k| h[k] = k.to_s }
+      @path_names.merge!(:registration => "")
+      @path_names.merge!(options[:path_names] || {})
 
-      @path_names  = Hash.new { |h,k| h[k] = k.to_s }
-      @path_names.merge!(options.delete(:path_names) || {})
+      @sign_out_via = options[:sign_out_via] || Devise.sign_out_via
     end
 
     # Return modules for the mapping.
@@ -81,12 +67,8 @@ module Devise
     end
 
     # Gives the class the mapping points to.
-    # Reload mapped class each time when cache_classes is false.
     def to
-      return @to if @to
-      klass = @klass.constantize
-      @to = klass if Rails.configuration.cache_classes
-      klass
+      @ref.get
     end
 
     def strategies
@@ -97,28 +79,12 @@ module Devise
       @routes ||= ROUTES.values_at(*self.modules).compact.uniq
     end
 
-    # Keep a list of allowed controllers for this mapping. It's useful to ensure
-    # that an Admin cannot access the registrations controller unless it has
-    # :registerable in the model.
-    def allowed_controllers
-      @allowed_controllers ||= begin
-        canonical = CONTROLLERS.values_at(*self.modules).compact
-        @controllers.values_at(*canonical)
-      end
-    end
-
-    # Return in which position in the path prefix devise should find the as mapping.
-    def segment_position
-      self.path_prefix.count("/")
-    end
-
-    # Returns the raw path using path_prefix and as.
-    def full_path
-      path_prefix + path.to_s
-    end
-
     def authenticatable?
       @authenticatable ||= self.modules.any? { |m| m.to_s =~ /authenticatable/ }
+    end
+
+    def fullpath
+      "#{@path_prefix}/#{@path}".squeeze("/")
     end
 
     # Create magic predicates for verifying what module is activated by this map.

@@ -1,34 +1,131 @@
+* deprecations
+  * cookie_domain is deprecated in favor of cookie_options
+  * after_update_path_for can no longer be defined in ApplicationController
+
+* enhancements
+  * Added OAuth 2 support
+  * sign_out_via is available in the router to configure the method used for sign out (by github.com/martinrehfeld)
+  * Improved Ajax requests handling in failure app (by github.com/spastorino)
+  * Added request_keys to easily use request specific values (like subdomain) in authentication
+  * Increased the size of friendly_token to 60 characters (reduces the chances of a successful brute attack)
+  * Ensure the friendly token does not include "_" or "-" since some e-mails may not autolink it properly (by github.com/rymai)
+  * Extracted encryptors into :encryptable for better bcrypt support
+  * :rememberable is now able to use salt as token if no remember_token is provided
+  * Store the salt in session and expire the session if the user changes his password
+  * Allow :stateless_token to be set to true avoiding users to be stored in session through token authentication
+  * cookie_options uses session_options values by default
+  * Sign up now check if the user is active or not and redirect him accordingly setting the inactive_signed_up message
+  * Use ActiveModel#to_key instead of #id
+  * sign_out_all_scopes now destroys the whole session
+
+* default behavior changes
+  * sign_out_all_scopes defaults to true as security measure
+  * http authenticatable is disabled by default
+
+* bugfix
+  * after_sign_in_path_for always receives a resource
+  * Do not execute Warden::Callbacks on Devise::TestHelpers (by github.com/sgronblo)
+  * Password recovery and account unlocking takes into account authentication keys (by github.com/RStankov)
+
+== 1.1.3
+
+* bugfix
+  * Add reply-to to e-mail headers by default
+  * Updated the views generator to respect the rails :template_engine option (by github.com/fredwu)
+  * Check the type of HTTP Authentication before using Basic headers
+  * Avoid invalid_salt errors by checking salt presence (by github.com/thibaudgg)
+  * Forget user deletes the right cookie before logout, not remembering the user anymore (by github.com/emtrane)
+  * Fix for failed first-ever logins on PostgreSQL where column default is nil (by github.com/bensie)
+  * :default options is now honored in migrations
+
+== 1.1.2
+
+* bugfix
+  * Compatibility with latest Rails routes schema
+
+== 1.1.1
+
+* bugfix
+  * Fix a small bug where generated locale file was empty on devise:install
+
+== 1.1.0
+
+* enhancements
+  * Rememberable module allows user to be remembered across browsers and is enabled by default (by github.com/trevorturk)
+  * Rememberable module allows you to activate the period the remember me token is extended (by github.com/trevorturk)
+  * devise_for can now be used together with scope method in routes but with a few limitations (check the documentation)
+  * Support `as` or `devise_scope` in the router to specify controller access scope
+  * HTTP Basic Auth can now be disabled/enabled for xhr(ajax) requests using http_authenticatable_on_xhr option (by github.com/pellja)
+
+* bug fix
+  * Fix a bug in Devise::TestHelpers where current_user was returning a Response object for non active accounts
+  * Devise should respect script_name and path_info contracts
+  * Fix a bug when accessing a path with (.:format) (by github.com/klacointe)
+  * Do not add unlock routes unless unlock strategy is email or both
+  * Email should be case insensitive
+  * Store classes as string in session, to avoid serialization and stale data issues
+
+* deprecations
+  * use_default_scope is deprecated and has no effect. Use :as or :devise_scope in the router instead
+
+== 1.1.rc2
+
+* enhancements
+  * Allow to set cookie domain for the remember token. (by github.com/mantas)
+  * Added navigational formats to specify when it should return a 302 and when a 401.
+  * Added authenticate(scope) support in routes (by github.com/wildchild)
+  * Added after_update_path_for to registrations controller (by github.com/thedelchop)
+  * Allow the mailer object to be replaced through config.mailer = "MyOwnMailer"
+
+* bug fix
+  * Fix a bug where session was timing out on sign out
+
+* deprecations
+  * bcrypt is now the default encryptor
+  * devise.mailer.confirmations_instructions now should be devise.mailer.confirmations_instructions.subject
+  * devise.mailer.user.confirmations_instructions now should be devise.mailer.confirmations_instructions.user_subject
+  * Generators now use Rails 3 syntax (devise:install) instead of devise_install
+
 == 1.1.rc1
 
 * enhancements
-  * Rails 3 compatibility.
-  * All controllers and views are namespaced, for example: Devise::SessionsController and "devise/sessions".
-  * Devise.orm is deprecated. This reduces the required API to hook your ORM with devise.
-  * Use metal for failure app.
-  * HTML e-mails now have proper formatting.
-  * Allow to give :skip and :controllers in routes.
-  * Move trackable logic to the model.
-  * E-mails now use any template available in the filesystem. Easy to create multipart e-mails.
-  * E-mails asks headers_for in the model to set the proper headers.
-  * Allow to specify haml in devise_views.
-  * Compatibility with Datamapper and Mongoid.
-  * Make config.devise available on config/application.rb.
-  * TokenAuthenticatable now works with HTTP Basic Auth.
-  * Allow :unlock_strategy to be :none and add :lock_strategy which can be :failed_attempts or none. Setting those values to :none means that you want to handle lock and unlocking by yourself.
-  * No need to append ?unauthenticated=true in URLs anymore since Flash was moved to a middleware in Rails 3.
-  * :activatable is included by default in your models.
+  * Rails 3 compatibility
+  * All controllers and views are namespaced, for example: Devise::SessionsController and "devise/sessions"
+  * Devise.orm is deprecated. This reduces the required API to hook your ORM with devise
+  * Use metal for failure app
+  * HTML e-mails now have proper formatting
+  * Allow to give :skip and :controllers in routes
+  * Move trackable logic to the model
+  * E-mails now use any template available in the filesystem. Easy to create multipart e-mails
+  * E-mails asks headers_for in the model to set the proper headers
+  * Allow to specify haml in devise_views
+  * Compatibility with Mongoid
+  * Make config.devise available on config/application.rb
+  * TokenAuthenticatable now works with HTTP Basic Auth
+  * Allow :unlock_strategy to be :none and add :lock_strategy which can be :failed_attempts or none. Setting those values to :none means that you want to handle lock and unlocking by yourself
+  * No need to append ?unauthenticated=true in URLs anymore since Flash was moved to a middleware in Rails 3
+  * :activatable is included by default in your models
 
 * bug fix
-  * Fix a bug with STI.
-  * Do not remove options from Datamapper and MongoMapper in find.
+  * Fix a bug with STI
 
 * deprecations
-  * Rails 3 compatible only.
-  * Scoped views are no longer "sessions/users/new". Now use "users/sessions/new".
-  * Devise.orm is deprecated, just require "devise/orm/YOUR_ORM" instead.
-  * Devise.default_url_options is deprecated, just modify ApplicationController.default_url_options.
-  * All messages under devise.sessions, except :signed_in and :signed_out, should be moved to devise.failure.
-  * :as and :scope in routes is deprecated. Use :path and :singular instead.
+  * Rails 3 compatible only
+  * Removed support for MongoMapper
+  * Scoped views are no longer "sessions/users/new". Now use "users/sessions/new"
+  * Devise.orm is deprecated, just require "devise/orm/YOUR_ORM" instead
+  * Devise.default_url_options is deprecated, just modify ApplicationController.default_url_options
+  * All messages under devise.sessions, except :signed_in and :signed_out, should be moved to devise.failure
+  * :as and :scope in routes is deprecated. Use :path and :singular instead
+
+== 1.0.8
+
+* enhancements
+  * Support for latest MongoMapper
+  * Added anybody_signed_in? helper (by github.com/SSDany)
+
+* bug fix
+  * confirmation_required? is properly honored on active? calls. (by github.com/paulrosania)
 
 == 1.0.7
 

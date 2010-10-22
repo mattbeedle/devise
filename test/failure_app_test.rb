@@ -8,22 +8,18 @@ class FailureTest < ActiveSupport::TestCase
 
   def call_failure(env_params={})
     env = {
-      'warden.options' => { :scope => :user },
       'REQUEST_URI' => 'http://test.host/',
       'HTTP_HOST' => 'test.host',
       'REQUEST_METHOD' => 'GET',
+      'warden.options' => { :scope => :user },
       'rack.session' => {},
+      'action_dispatch.request.formats' => Array(env_params.delete('formats') || :html),
       'rack.input' => "",
       'warden' => OpenStruct.new(:message => nil)
     }.merge!(env_params)
-    
+
     @response = Devise::FailureApp.call(env).to_a
     @request  = ActionDispatch::Request.new(env)
-  end
-
-  def call_failure_with_http(env_params={})
-    env = { "HTTP_AUTHORIZATION" => "Basic #{ActiveSupport::Base64.encode64("foo:bar")}" }
-    call_failure(env_params.merge!(env))
   end
 
   context 'When redirecting' do
@@ -61,30 +57,87 @@ class FailureTest < ActiveSupport::TestCase
       assert_match /redirected/, @response.last.body
       assert_match /users\/sign_in/, @response.last.body
     end
+
+    test 'works for any navigational format' do
+      swap Devise, :navigational_formats => [:xml] do
+        call_failure('formats' => :xml)
+        assert_equal 302, @response.first
+      end
+    end
   end
 
   context 'For HTTP request' do
     test 'return 401 status' do
-      call_failure_with_http
+      call_failure('formats' => :xml)
       assert_equal 401, @response.first
     end
 
-    test 'return WWW-authenticate headers' do
-      call_failure_with_http
+    test 'return WWW-authenticate headers if model allows' do
+      call_failure('formats' => :xml)
       assert_equal 'Basic realm="Application"', @response.second["WWW-Authenticate"]
     end
 
-    test 'uses the proxy failure message as response body' do
-      call_failure_with_http('warden' => OpenStruct.new(:message => :invalid))
-      assert_equal 'Invalid email or password.', @response.third.body
+    test 'does not return WWW-authenticate headers if model does not allow' do
+      swap Devise, :http_authenticatable => false do
+        call_failure('formats' => :xml)
+        assert_nil @response.second["WWW-Authenticate"]
+      end
+    end
+
+    test 'works for any non navigational format' do
+      swap Devise, :navigational_formats => [] do
+        call_failure('formats' => :html)
+        assert_equal 401, @response.first
+      end
+    end
+
+    test 'uses the failure message as response body' do
+      call_failure('formats' => :xml, 'warden' => OpenStruct.new(:message => :invalid))
+      assert_match '<error>Invalid email or password.</error>', @response.third.body
+    end
+
+    context 'on ajax call' do
+      context 'when http_authenticatable_on_xhr is false' do
+        test 'dont return 401 with navigational formats' do
+          swap Devise, :http_authenticatable_on_xhr => false do
+            call_failure('formats' => :html, 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest')
+            assert_equal 302, @response.first
+            assert_equal 'http://test.host/users/sign_in', @response.second["Location"]
+          end
+        end
+
+        test 'dont return 401 with non navigational formats' do
+          swap Devise, :http_authenticatable_on_xhr => false do
+            call_failure('formats' => :json, 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest')
+            assert_equal 302, @response.first
+            assert_equal 'http://test.host/users/sign_in', @response.second["Location"]
+          end
+        end
+      end
+
+      context 'when http_authenticatable_on_xhr is true' do
+        test 'return 401' do
+          swap Devise, :http_authenticatable_on_xhr => true do
+            call_failure('formats' => :html, 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest')
+            assert_equal 401, @response.first
+          end
+        end
+
+        test 'skip WWW-Authenticate header' do
+          swap Devise, :http_authenticatable_on_xhr => true do
+            call_failure('formats' => :html, 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest')
+            assert_nil @response.second['WWW-Authenticate']
+          end
+        end
+      end
     end
   end
 
   context 'With recall' do
     test 'calls the original controller' do
       env = {
-        "action_dispatch.request.parameters" => { :controller => "devise/sessions" },
-        "warden.options" => { :recall => "new", :attempted_path => "/users/sign_in" },
+        "warden.options" => { :recall => "devise/sessions#new", :attempted_path => "/users/sign_in" },
+        "devise.mapping" => Devise.mappings[:user],
         "warden" => stub_everything
       }
       call_failure(env)

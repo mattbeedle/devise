@@ -85,6 +85,23 @@ class RecoverableTest < ActiveSupport::TestCase
     assert_not reset_password_user.persisted?
     assert_equal "not found", reset_password_user.errors[:email].join
   end
+  
+  test 'should find a user to send instructions by authentication_keys' do
+    swap Devise, :authentication_keys => [:username, :email] do
+      user = create_user
+      reset_password_user = User.send_reset_password_instructions(:email => user.email, :username => user.username)
+      assert_equal reset_password_user, user
+    end
+  end
+  
+  test 'should require all authentication_keys' do
+    swap Devise, :authentication_keys => [:username, :email] do
+      user = create_user
+      reset_password_user = User.send_reset_password_instructions(:email => user.email)
+      assert_not reset_password_user.persisted?
+      assert_equal "can't be blank", reset_password_user.errors[:username].join
+    end
+  end
 
   test 'should reset reset_password_token before send the reset instructions email' do
     user = create_user

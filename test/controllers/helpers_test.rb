@@ -1,51 +1,16 @@
 require 'test_helper'
 require 'ostruct'
 
-class MockController < ApplicationController
-  attr_accessor :env
-
-  def request
-    self
-  end
-
-  def path
-    ''
-  end
-
-  def index
-  end
-
-  def host_with_port
-    "test.host:3000"
-  end
-
-  def protocol
-    "http"
-  end
-
-  def script_name
-    ""
-  end
-
-  def symbolized_path_parameters
-    {}
-  end
-end
-
 class ControllerAuthenticableTest < ActionController::TestCase
-  tests MockController
+  tests ApplicationController
 
   def setup
     @mock_warden = OpenStruct.new
-    @controller.env = { 'warden' => @mock_warden }
-  end
-
-  test 'setup warden' do
-    assert_not_nil @controller.warden
+    @controller.request.env['warden'] = @mock_warden
   end
 
   test 'provide access to warden instance' do
-    assert_equal @controller.warden, @controller.env['warden']
+    assert_equal @mock_warden, @controller.warden
   end
 
   test 'proxy signed_in? to authenticated' do
@@ -53,9 +18,11 @@ class ControllerAuthenticableTest < ActionController::TestCase
     @controller.signed_in?(:my_scope)
   end
 
-  test 'proxy current_admin to authenticate with admin scope' do
-    @mock_warden.expects(:authenticate).with(:scope => :admin)
-    @controller.current_admin
+  test 'proxy anybody_signed_in? to signed_in?' do
+    Devise.mappings.keys.each do |scope| # :user, :admin, :manager
+      @controller.expects(:signed_in?).with(scope)
+    end
+    @controller.anybody_signed_in?
   end
 
   test 'proxy current_user to authenticate with user scope' do
@@ -63,24 +30,44 @@ class ControllerAuthenticableTest < ActionController::TestCase
     @controller.current_user
   end
 
-  test 'proxy user_authenticate! to authenticate with user scope' do
+  test 'proxy current_admin to authenticate with admin scope' do
+    @mock_warden.expects(:authenticate).with(:scope => :admin)
+    @controller.current_admin
+  end
+
+  test 'proxy current_publisher_account to authenticate with namespaced publisher account scope' do
+    @mock_warden.expects(:authenticate).with(:scope => :publisher_account)
+    @controller.current_publisher_account
+  end
+
+  test 'proxy authenticate_user! to authenticate with user scope' do
     @mock_warden.expects(:authenticate!).with(:scope => :user)
     @controller.authenticate_user!
   end
 
-  test 'proxy admin_authenticate! to authenticate with admin scope' do
+  test 'proxy authenticate_admin! to authenticate with admin scope' do
     @mock_warden.expects(:authenticate!).with(:scope => :admin)
     @controller.authenticate_admin!
   end
 
-  test 'proxy user_signed_in? to authenticate? with user scope' do
-    @mock_warden.expects(:authenticate?).with(:scope => :user)
-    @controller.user_signed_in?
+  test 'proxy authenticate_publisher_account! to authenticate with namespaced publisher account scope' do
+    @mock_warden.expects(:authenticate!).with(:scope => :publisher_account)
+    @controller.authenticate_publisher_account!
   end
 
-  test 'proxy admin_signed_in? to authenticate? with admin scope' do
-    @mock_warden.expects(:authenticate?).with(:scope => :admin)
-    @controller.admin_signed_in?
+  test 'proxy user_signed_in? to authenticate with user scope' do
+    @mock_warden.expects(:authenticate).with(:scope => :user).returns("user")
+    assert @controller.user_signed_in?
+  end
+
+  test 'proxy admin_signed_in? to authenticatewith admin scope' do
+    @mock_warden.expects(:authenticate).with(:scope => :admin)
+    assert_not @controller.admin_signed_in?
+  end
+
+  test 'proxy publisher_account_signed_in? to authenticate with namespaced publisher account scope' do
+    @mock_warden.expects(:authenticate).with(:scope => :publisher_account)
+    @controller.publisher_account_signed_in?
   end
 
   test 'proxy user_session to session scope in warden' do
@@ -95,6 +82,12 @@ class ControllerAuthenticableTest < ActionController::TestCase
     @controller.admin_session
   end
 
+  test 'proxy publisher_account_session from namespaced scope to session scope in warden' do
+    @mock_warden.expects(:authenticate).with(:scope => :publisher_account).returns(true)
+    @mock_warden.expects(:session).with(:publisher_account).returns({})
+    @controller.publisher_account_session
+  end
+
   test 'sign in proxy to set_user on warden' do
     user = User.new
     @mock_warden.expects(:set_user).with(user, :scope => :user).returns(true)
@@ -107,6 +100,13 @@ class ControllerAuthenticableTest < ActionController::TestCase
     @controller.sign_in(user)
   end
 
+  test 'sign in accepts bypass as option' do
+    user = User.new
+    @mock_warden.expects(:session_serializer).returns(serializer = mock())
+    serializer.expects(:store).with(user, :user)
+    @controller.sign_in(user, :bypass => true)
+  end
+
   test 'sign out proxy to logout on warden' do
     @mock_warden.expects(:user).with(:user).returns(true)
     @mock_warden.expects(:logout).with(:user).returns(true)
@@ -117,6 +117,11 @@ class ControllerAuthenticableTest < ActionController::TestCase
     @mock_warden.expects(:user).with(:user).returns(true)
     @mock_warden.expects(:logout).with(:user).returns(true)
     @controller.sign_out(User.new)
+  end
+
+  test 'sign out everybody proxy to logout on warden' do
+    @mock_warden.expects(:logout).with().returns(true)
+    @controller.sign_out_all_scopes
   end
 
   test 'stored location for returns the location for a given scope' do
@@ -175,12 +180,23 @@ class ControllerAuthenticableTest < ActionController::TestCase
     @controller.sign_in_and_redirect(admin)
   end
 
-  test 'sign out and redirect uses the configured after sign out path' do
-    @mock_warden.expects(:user).with(:admin).returns(true)
-    @mock_warden.expects(:logout).with(:admin).returns(true)
-    @controller.expects(:redirect_to).with(admin_root_path)
-    @controller.instance_eval "def after_sign_out_path_for(resource); admin_root_path; end"
-    @controller.sign_out_and_redirect(:admin)
+  test 'sign out and redirect uses the configured after sign out path when signing out only the current scope' do
+    swap Devise, :sign_out_all_scopes => false do
+      @mock_warden.expects(:user).with(:admin).returns(true)
+      @mock_warden.expects(:logout).with(:admin).returns(true)
+      @controller.expects(:redirect_to).with(admin_root_path)
+      @controller.instance_eval "def after_sign_out_path_for(resource); admin_root_path; end"
+      @controller.sign_out_and_redirect(:admin)
+    end
+  end
+
+  test 'sign out and redirect uses the configured after sign out path when signing out all scopes' do
+    swap Devise, :sign_out_all_scopes => true do
+      @mock_warden.expects(:logout).with().returns(true)
+      @controller.expects(:redirect_to).with(admin_root_path)
+      @controller.instance_eval "def after_sign_out_path_for(resource); admin_root_path; end"
+      @controller.sign_out_and_redirect(:admin)
+    end
   end
 
   test 'is not a devise controller' do

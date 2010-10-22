@@ -9,17 +9,40 @@ module Devise
       attr_accessor :authentication_hash, :password
 
       def valid?
-        valid_for_http_auth? || valid_for_params_auth?
+        valid_for_params_auth? || valid_for_http_auth?
       end
 
     private
 
-      # Check if this is strategy is valid for http authentication.
+      # Simply invokes valid_for_authentication? with the given block and deal with the result.
+      def validate(resource, &block)
+        result = resource && resource.valid_for_authentication?(&block)
+
+        case result
+        when Symbol, String
+          fail!(result)
+        else
+          result
+        end
+      end
+
+      # Check if this is strategy is valid for http authentication by:
+      #
+      #   * Validating if the model allows params authentication;
+      #   * If any of the authorization headers were sent;
+      #   * If all authentication keys are present;
+      #
       def valid_for_http_auth?
         http_authenticatable? && request.authorization && with_authentication_hash(http_auth_hash)
       end
 
-      # Check if this is strategy is valid for params authentication.
+      # Check if this is strategy is valid for params authentication by:
+      #
+      #   * Validating if the model allows params authentication;
+      #   * If the request hits the sessions controller through POST;
+      #   * If the params[scope] returns a hash with credentials;
+      #   * If all authentication keys are present;
+      #
       def valid_for_params_auth?
         params_authenticatable? && valid_request? &&
           valid_params? && with_authentication_hash(params_auth_hash)
@@ -51,12 +74,12 @@ module Devise
         valid_controller? && valid_verb?
       end
 
-      # Check if the controller is valid for params authentication.
+      # Check if the controller is the one registered for authentication.
       def valid_controller?
         mapping.controllers[:sessions] == params[:controller]
       end
 
-      # Check if the params_auth_hash is valid for params authentication.
+      # Check if it was a POST request.
       def valid_verb?
         request.post?
       end
@@ -66,22 +89,54 @@ module Devise
         params_auth_hash.is_a?(Hash)
       end
 
+      # Check if password is present and is not equal to "X" (default value for token).
+      def valid_password?
+        password.present? && password != "X"
+      end
+
       # Helper to decode credentials from HTTP.
       def decode_credentials
-        username_and_password = request.authorization.split(' ', 2).last || ''
-        ActiveSupport::Base64.decode64(username_and_password).split(/:/, 2)
+        return [] unless request.authorization && request.authorization =~ /^Basic (.*)/
+        ActiveSupport::Base64.decode64($1).split(/:/, 2)
       end
 
       # Sets the authentication hash and the password from params_auth_hash or http_auth_hash.
-      def with_authentication_hash(hash)
-        self.authentication_hash = hash.slice(*authentication_keys)
-        self.password = hash[:password]
-        authentication_keys.all?{ |k| authentication_hash[k].present? }
+      def with_authentication_hash(auth_values)
+        self.authentication_hash = {}
+        self.password = auth_values[:password]
+
+        parse_authentication_key_values(auth_values, authentication_keys) &&
+        parse_authentication_key_values(request_values, request_keys)
       end
 
       # Holds the authentication keys.
       def authentication_keys
         @authentication_keys ||= mapping.to.authentication_keys
+      end
+
+      # Holds request keys.
+      def request_keys
+        @request_keys ||= mapping.to.request_keys
+      end
+
+      # Returns values from the request object.
+      def request_values
+        keys = request_keys.respond_to?(:keys) ? request_keys.keys : request_keys
+        values = keys.map { |k| self.request.send(k) }
+        Hash[keys.zip(values)]
+      end
+
+      # Parse authentication keys considering if they should be enforced or not.
+      def parse_authentication_key_values(hash, keys)
+        keys.each do |key, enforce|
+          value = hash[key].presence
+          if value
+            self.authentication_hash[key] = value
+          else
+            return false unless enforce == false
+          end
+        end
+        true
       end
 
       # Holds the authenticatable name for this class. Devise::Strategies::DatabaseAuthenticatable

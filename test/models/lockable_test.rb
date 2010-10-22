@@ -64,7 +64,7 @@ class LockableTest < ActiveSupport::TestCase
     user.unlock_access!
     assert_nil user.reload.locked_at
     assert_nil user.reload.unlock_token
-    assert 0, user.reload.failed_attempts
+    assert_equal 0, user.reload.failed_attempts
   end
 
   test 'should not unlock an unlocked user' do
@@ -178,11 +178,27 @@ class LockableTest < ActiveSupport::TestCase
     assert_equal 'not found', unlock_user.errors[:email].join
   end
 
+  test 'should find a user to send unlock instructions by authentication_keys' do
+    swap Devise, :authentication_keys => [:username, :email] do
+      user = create_user
+      unlock_user = User.send_unlock_instructions(:email => user.email, :username => user.username)
+      assert_equal unlock_user, user
+    end
+  end
+
+  test 'should require all authentication_keys' do
+    swap Devise, :authentication_keys => [:username, :email] do
+      user = create_user
+      unlock_user = User.send_unlock_instructions(:email => user.email)
+      assert_not unlock_user.persisted?
+      assert_equal "can't be blank", unlock_user.errors[:username].join
+    end
+  end
+
   test 'should not be able to send instructions if the user is not locked' do
     user = create_user
     assert_not user.resend_unlock_token
     assert_not user.access_locked?
     assert_equal 'was not locked', user.errors[:email].join
   end
-
 end

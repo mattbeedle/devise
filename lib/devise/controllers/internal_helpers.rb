@@ -8,10 +8,9 @@ module Devise
       include Devise::Controllers::ScopedViews
 
       included do
-        unloadable
         helper DeviseHelper
 
-        helpers = %w(resource scope_name resource_name
+        helpers = %w(resource scope_name resource_name signed_in_resource
                      resource_class devise_mapping devise_controller?)
         hide_action *helpers
         helper_method *helpers
@@ -36,13 +35,14 @@ module Devise
         devise_mapping.to
       end
 
+      # Returns a signed in resource from session (if one exists)
+      def signed_in_resource
+        warden.authenticate(:scope => resource_name)
+      end
+
       # Attempt to find the mapped route for devise based on request path
       def devise_mapping
-        @devise_mapping ||= begin
-          mapping   = Devise::Mapping.find_by_path(request.path)
-          mapping ||= Devise.mappings[Devise.default_scope] if Devise.use_default_scope
-          mapping
-        end
+        @devise_mapping ||= request.env["devise.mapping"]
       end
 
       # Overwrites devise_controller? to return true
@@ -54,8 +54,12 @@ module Devise
 
       # Checks whether it's a devise mapped resource or not.
       def is_devise_resource? #:nodoc:
-        raise ActionController::UnknownAction unless devise_mapping &&
-          devise_mapping.allowed_controllers.include?(controller_path)
+        unknown_action!("Could not find devise mapping for #{request.fullpath}.") unless devise_mapping
+      end
+
+      def unknown_action!(msg)
+        logger.debug "[Devise] #{msg}" if logger
+        raise ActionController::UnknownAction, msg
       end
 
       # Sets the resource creating an instance variable
@@ -74,7 +78,10 @@ module Devise
       # Example:
       #   before_filter :require_no_authentication, :only => :new
       def require_no_authentication
-        redirect_to after_sign_in_path_for(resource_name) if warden.authenticated?(resource_name)
+        if warden.authenticated?(resource_name)
+          resource = warden.user(resource_name)
+          redirect_to after_sign_in_path_for(resource)
+        end
       end
 
       # Sets the flash message with :key, using I18n. By default you are able
@@ -91,12 +98,14 @@ module Devise
       #
       # Please refer to README or en.yml locale file to check what messages are
       # available.
-      def set_flash_message(key, kind)
-        flash[key] = I18n.t(:"#{resource_name}.#{kind}", :resource_name => resource_name,
-                            :scope => [:devise, controller_name.to_sym], :default => kind)
+      def set_flash_message(key, kind, options={}) #:nodoc:
+        options[:scope] = "devise.#{controller_name}"
+        options[:default] = Array(options[:default]).unshift(kind.to_sym)
+        options[:resource_name] = resource_name
+        flash[key] = I18n.t("#{resource_name}.#{kind}", options)
       end
 
-      def clean_up_passwords(object)
+      def clean_up_passwords(object) #:nodoc:
         object.clean_up_passwords if object.respond_to?(:clean_up_passwords)
       end
     end

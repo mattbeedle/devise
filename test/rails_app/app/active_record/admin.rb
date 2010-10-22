@@ -1,3 +1,6 @@
+require 'shared_admin'
+
 class Admin < ActiveRecord::Base
-  devise :database_authenticatable, :registerable, :timeoutable, :recoverable
+  include Shim
+  include SharedAdmin
 end

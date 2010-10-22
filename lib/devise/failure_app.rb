@@ -9,6 +9,7 @@ module Devise
     include ActionController::RackDelegation
     include ActionController::UrlFor
     include ActionController::Redirecting
+    include Rails.application.routes.url_helpers
 
     delegate :flash, :to => :request
 
@@ -32,7 +33,7 @@ module Devise
 
     def http_auth
       self.status = 401
-      self.headers["WWW-Authenticate"] = %(Basic realm=#{Devise.http_authentication_realm.inspect})
+      self.headers["WWW-Authenticate"] = %(Basic realm=#{Devise.http_authentication_realm.inspect}) if http_auth_header?
       self.content_type = request.format.to_s
       self.response_body = http_auth_body
     end
@@ -40,13 +41,13 @@ module Devise
     def recall
       env["PATH_INFO"]  = attempted_path
       flash.now[:alert] = i18n_message(:invalid)
-      self.response = recall_controller.action(warden_options[:recall]).call(env)
+      self.response = recall_app(warden_options[:recall]).call(env)
     end
 
     def redirect
       store_location!
-      flash[:alert] = i18n_message unless flash[:notice]
-      redirect_to send(:"new_#{scope}_session_path")
+      flash[:alert] = i18n_message
+      redirect_to redirect_url
     end
 
   protected
@@ -62,8 +63,30 @@ module Devise
       end
     end
 
+    def redirect_url
+      send(:"new_#{scope}_session_path")
+    end
+
+    # Choose whether we should respond in a http authentication fashion,
+    # including 401 and optional headers.
+    #
+    # This method allows the user to explicitly disable http authentication
+    # on ajax requests in case they want to redirect on failures instead of
+    # handling the errors on their own. This is useful in case your ajax API
+    # is the same as your public API and uses a format like JSON (so you
+    # cannot mark JSON as a navigational format).
     def http_auth?
-      request.authorization
+      if request.xhr?
+        Devise.http_authenticatable_on_xhr
+      else
+        !Devise.navigational_formats.include?(request.format.to_sym)
+      end
+    end
+
+    # It does not make sense to send authenticate headers in ajax requests
+    # or if the user disabled them.
+    def http_auth_header?
+      Devise.mappings[scope].to.http_authenticatable && !request.xhr?
     end
 
     def http_auth_body
@@ -71,8 +94,9 @@ module Devise
       {}.respond_to?(method) ? { :error => i18n_message }.send(method) : i18n_message
     end
 
-    def recall_controller
-      "#{params[:controller].camelize}Controller".constantize
+    def recall_app(app)
+      controller, action = app.split("#")
+      "#{controller.camelize}Controller".constantize.action(action)
     end
 
     def warden
@@ -84,7 +108,7 @@ module Devise
     end
 
     def scope
-      @scope ||= warden_options[:scope]
+      @scope ||= warden_options[:scope] || Devise.default_scope
     end
 
     def attempted_path
@@ -96,7 +120,7 @@ module Devise
     # yet, but we still need to store the uri based on scope, so different scopes
     # would never use the same uri to redirect.
     def store_location!
-      session[:"#{scope}_return_to"] = attempted_path if request && request.get?
+      session["#{scope}_return_to"] = attempted_path if request.get? && !http_auth?
     end
   end
 end

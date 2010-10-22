@@ -20,7 +20,7 @@ class RoutesTest < ActionController::TestCase
                  send(:"#{prepend_path}user_#{name}_url", :param => 123)
 
     @request.path = nil
-    # With an AR object
+    # With an object
     assert_equal @controller.send(:"#{prepend_path}#{name}_path", User.new),
                  send(:"#{prepend_path}user_#{name}_path")
     assert_equal @controller.send(:"#{prepend_path}#{name}_url", User.new),
@@ -43,5 +43,17 @@ class RoutesTest < ActionController::TestCase
   test 'should alias confirmation to mapped user confirmation' do
     assert_path_and_url :confirmation
     assert_path_and_url :confirmation, :new
+  end
+
+  test 'should alias unlock to mapped user unlock' do
+    assert_path_and_url :unlock
+    assert_path_and_url :unlock, :new
+  end
+
+  test 'should alias registration to mapped user registration' do
+    assert_path_and_url :registration
+    assert_path_and_url :registration, :new
+    assert_path_and_url :registration, :edit
+    assert_path_and_url :registration, :cancel
   end
 end

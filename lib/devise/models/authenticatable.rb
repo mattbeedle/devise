@@ -4,18 +4,25 @@ module Devise
   module Models
     # Authenticable module. Holds common settings for authentication.
     #
-    # == Configuration:
+    # == Options
     #
-    # You can overwrite configuration values by setting in globally in Devise,
-    # using devise method or overwriting the respective instance method.
+    # Authenticatable adds the following options to devise_for:
     #
-    #   authentication_keys: parameters used for authentication. By default [:email].
+    #   * +authentication_keys+: parameters used for authentication. By default [:email].
     #
-    #   http_authenticatable: if this model allows http authentication. By default true.
-    #   It also accepts an array specifying the strategies that should allow http.
+    #   * +request_keys+: parameters from the request object used for authentication.
+    #     By specifying a symbol (which should be a request method), it will automatically be
+    #     passed to find_for_authentication method and considered in your model lookup.
     #
-    #   params_authenticatable: if this model allows authentication through request params. By default true.
-    #   It also accepts an array specifying the strategies that should allow params authentication.
+    #     For instance, if you set :request_keys to [:subdomain], :subdomain will be considered
+    #     as key on authentication. This can also be a hash where the value is a boolean expliciting
+    #     if the value is required or not.
+    #
+    #   * +http_authenticatable+: if this model allows http authentication. By default true.
+    #     It also accepts an array specifying the strategies that should allow http.
+    #
+    #   * +params_authenticatable+: if this model allows authentication through request params. By default true.
+    #     It also accepts an array specifying the strategies that should allow params authentication.
     #
     # == Active?
     #
@@ -44,10 +51,11 @@ module Devise
         self.devise_modules ||= []
       end
 
-      # Check if the current object is valid for authentication. This method and find_for_authentication
-      # are the methods used in a Warden::Strategy to check if a model should be signed in or not.
+      # Check if the current object is valid for authentication. This method and
+      # find_for_authentication are the methods used in a Warden::Strategy to check
+      # if a model should be signed in or not.
       #
-      # However, you should not need to overwrite this method, you should overwrite active? and
+      # However, you should not overwrite this method, you should overwrite active? and
       # inactive_message instead.
       def valid_for_authentication?
         if active?
@@ -65,8 +73,11 @@ module Devise
         :inactive
       end
 
+      def authenticatable_salt
+      end
+
       module ClassMethods
-        Devise::Models.config(self, :authentication_keys, :http_authenticatable, :params_authenticatable)
+        Devise::Models.config(self, :authentication_keys, :request_keys, :http_authenticatable, :params_authenticatable)
 
         def params_authenticatable?(strategy)
           params_authenticatable.is_a?(Array) ?
@@ -89,27 +100,42 @@ module Devise
         #   end
         #
         def find_for_authentication(conditions)
-          find(:first, :conditions => conditions)
+          to_adapter.find_first(conditions)
         end
 
         # Find an initialize a record setting an error if it can't be found.
         def find_or_initialize_with_error_by(attribute, value, error=:invalid) #:nodoc:
-          if value.present?
-            conditions = { attribute => value }
-            record = find(:first, :conditions => conditions)
-          end
+          find_or_initialize_with_errors([attribute], { attribute => value }, error)
+        end
 
+        # Find an initialize a group of attributes based on a list of required attributes.
+        def find_or_initialize_with_errors(required_attributes, attributes, error=:invalid) #:nodoc:
+          attributes = attributes.slice(*required_attributes)
+          attributes.delete_if { |key, value| value.blank? }
+
+          if attributes.size == required_attributes.size
+            record = to_adapter.find_first(attributes)
+          end
+          
           unless record
             record = new
-            if value.present?
-              record.send(:"#{attribute}=", value)
-            else
-              error = :blank
+
+            required_attributes.each do |key|
+              value = attributes[key]
+              record.send("#{key}=", value)
+              record.errors.add(key, value.present? ? error : :blank)
             end
-            record.errors.add(attribute, error)
           end
 
           record
+        end
+
+        # Generate a token by looping and ensuring does not already exist.
+        def generate_token(column)
+          loop do
+            token = Devise.friendly_token
+            break token unless to_adapter.find_first({ column => token })
+          end
         end
       end
     end

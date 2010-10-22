@@ -7,13 +7,14 @@ module Devise
     # will unlock the user automatically after some configured time (ie 2.hours).
     # It's also possible to setup lockable to use both email and time strategies.
     #
-    # Configuration:
+    # == Options
     #
-    #   maximum_attempts: how many attempts should be accepted before blocking the user.
-    #   lock_strategy: lock the user account by :failed_attempts or :none.
-    #   unlock_strategy: unlock the user account by :time, :email, :both or :none.
-    #   unlock_in: the time you want to lock the user after to lock happens. Only
-    #              available when unlock_strategy is :time or :both.
+    # Lockable adds the following options to devise_for:
+    #
+    #   * +maximum_attempts+: how many attempts should be accepted before blocking the user.
+    #   * +lock_strategy+: lock the user account by :failed_attempts or :none.
+    #   * +unlock_strategy+: unlock the user account by :time, :email, :both or :none.
+    #   * +unlock_in+: the time you want to lock the user after to lock happens. Only available when unlock_strategy is :time or :both.
     #
     module Lockable
       extend  ActiveSupport::Concern
@@ -49,7 +50,7 @@ module Devise
 
       # Send unlock instructions by email
       def send_unlock_instructions
-        ::Devise::Mailer.unlock_instructions(self).deliver
+        ::Devise.mailer.unlock_instructions(self).deliver
       end
 
       # Resend the unlock instructions if the user is locked.
@@ -81,6 +82,8 @@ module Devise
         when TrueClass
           self.failed_attempts = 0
         when FalseClass
+          # PostgreSQL uses nil as the default value for integer columns set to 0
+          self.failed_attempts ||= 0
           self.failed_attempts += 1
           if attempts_exceeded?
             lock_access!
@@ -129,7 +132,7 @@ module Devise
         # with an email not found error.
         # Options must contain the user email
         def send_unlock_instructions(attributes={})
-         lockable = find_or_initialize_with_error_by(:email, attributes[:email], :not_found)
+         lockable = find_or_initialize_with_errors(authentication_keys, attributes, :not_found)
          lockable.resend_unlock_token if lockable.persisted?
          lockable
         end

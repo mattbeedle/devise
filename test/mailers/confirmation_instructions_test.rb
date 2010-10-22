@@ -35,14 +35,18 @@ class ConfirmationInstructionsTest < ActionMailer::TestCase
     assert_equal ['test@example.com'], mail.from
   end
 
+  test 'setup reply to as copy from sender' do
+    assert_equal ['test@example.com'], mail.reply_to
+  end
+
   test 'setup subject from I18n' do
-    store_translations :en, :devise => { :mailer => { :confirmation_instructions => 'Account Confirmation' } } do
+    store_translations :en, :devise => { :mailer => { :confirmation_instructions => { :subject => 'Account Confirmation' } } } do
       assert_equal 'Account Confirmation', mail.subject
     end
   end
 
   test 'subject namespaced by model' do
-    store_translations :en, :devise => { :mailer => { :user => { :confirmation_instructions => 'User Account Confirmation' } } } do
+    store_translations :en, :devise => { :mailer => { :confirmation_instructions => { :user_subject => 'User Account Confirmation' } } } do
       assert_equal 'User Account Confirmation', mail.subject
     end
   end

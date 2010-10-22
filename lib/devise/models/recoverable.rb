@@ -1,8 +1,9 @@
 module Devise
   module Models
 
-    # Recoverable takes care of reseting the user password and send reset instructions
-    # Examples:
+    # Recoverable takes care of reseting the user password and send reset instructions.
+    #
+    # == Examples
     #
     #   # resets the user password and save the record, true if valid passwords are given, otherwise false
     #   User.find(1).reset_password!('password123', 'password123')
@@ -13,6 +14,7 @@ module Devise
     #
     #   # creates a new token and send it with instructions about how to reset the password
     #   User.find(1).send_reset_password_instructions
+    #
     module Recoverable
       extend ActiveSupport::Concern
 
@@ -28,14 +30,14 @@ module Devise
       # Resets reset password token and send reset password instructions by email
       def send_reset_password_instructions
         generate_reset_password_token!
-        ::Devise::Mailer.reset_password_instructions(self).deliver
+        ::Devise.mailer.reset_password_instructions(self).deliver
       end
 
       protected
 
         # Generates a new random token for reset password
         def generate_reset_password_token
-          self.reset_password_token = Devise.friendly_token
+          self.reset_password_token = self.class.reset_password_token
         end
 
         # Resets the reset password token with and save the record without
@@ -55,9 +57,14 @@ module Devise
         # with an email not found error.
         # Attributes must contain the user email
         def send_reset_password_instructions(attributes={})
-          recoverable = find_or_initialize_with_error_by(:email, attributes[:email], :not_found)
+          recoverable = find_or_initialize_with_errors(authentication_keys, attributes, :not_found)
           recoverable.send_reset_password_instructions if recoverable.persisted?
           recoverable
+        end
+
+        # Generate a token checking if one does not already exist in the database.
+        def reset_password_token
+          generate_token(:reset_password_token)
         end
 
         # Attempt to find a user by it's reset_password_token to reset it's

@@ -1,11 +1,10 @@
 class Devise::UnlocksController < ApplicationController
-  prepend_before_filter :ensure_email_as_unlock_strategy
   prepend_before_filter :require_no_authentication
   include Devise::Controllers::InternalHelpers
 
   # GET /resource/unlock/new
   def new
-    build_resource
+    build_resource({})
     render_with_scope :new
   end
 
@@ -31,11 +30,5 @@ class Devise::UnlocksController < ApplicationController
     else
       render_with_scope :new
     end
-  end
-
-  protected
-
-  def ensure_email_as_unlock_strategy
-    raise ActionController::UnknownAction unless resource_class.unlock_strategy_enabled?(:email)
   end
 end
